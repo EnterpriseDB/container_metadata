@@ -1,0 +1,125 @@
+apiVersion: v1
+kind: Template
+metadata:
+   name: edb-bart
+   annotations:
+    description: "Standard EDB Backup And Recovery Tool Deployment Config"
+    tags: "database,ppas,postgres,postgresql"
+    iconClass: "icon-postgresql"
+labels:
+   template: edb-bart
+objects:
+- apiVersion: v1
+  kind: DeploymentConfig
+  metadata:
+    name: ${DATABASE_NAME}-bart
+  spec:
+    replicas: 1
+    selector:
+      name: ${DATABASE_NAME}-bart
+    strategy:
+      resources: {}
+      rollingParams:
+        intervalSeconds: 1
+        maxSurge: 25%
+        maxUnavailable: 25%
+        timeoutSeconds: 600
+        updatePeriodSeconds: 1
+      type: Rolling
+    template:
+      metadata:
+        labels:
+          name: ${DATABASE_NAME}-bart
+      spec:
+        containers:
+        - env:
+          - name: BART_HOST_ADDRESS 
+            value: ${BART_HOST_ADDRESS}
+          - name: DB_SERVER_NAME
+            value: ${DB_SERVER_NAME}
+          - name: PGHOST
+            value: "${DATABASE_NAME}-service"
+          - name: PGPORT
+            value: ${PGPORT}
+          - name: DATABASE_NAME 
+            value: ${DATABASE_NAME}
+          - name: REPL_USER
+            value: ${REPL_USER}
+          - name: REPL_PASSWORD
+            value: ${REPL_PASSWORD}
+          - name: BART_BACKUP_SCHEDULE 
+            value: "${BART_BACKUP_SCHEDULE}"
+          - name: BART_NUM_BACKUPS_TO_KEEP 
+            value: "${BART_NUM_BACKUPS_TO_KEEP}"
+          - name: YUM_URL
+            value: "${YUM_URL}"
+          image: edb-bart:1
+          imagePullPolicy: IfNotPresent 
+          name: edb-bart
+          volumeMounts:
+          - name: ${PERSISTENT_VOLUME}
+            mountPath: /edbvolume
+        volumes:
+        - name: ${PERSISTENT_VOLUME}
+          persistentVolumeClaim:
+            claimName: ${PERSISTENT_VOLUME_CLAIM}
+    triggers:
+    - type: ConfigChange
+parameters:
+- name: BART_HOST_ADDRESS 
+  displayName: BART Host Address 
+  description: BART host address (leave localhost for default)
+  value: 'localhost'
+  required: true
+- name: DB_SERVER_NAME
+  displayName: Database Server Name
+  description: Database server name (leave ppas-95 for default)
+  value: 'ppas-95'
+  required: true
+- name: DATABASE_NAME  
+  displayName: Database Name 
+  description: Name of Postgres database (leave edb for default) 
+  value: 'edb'   
+  required: true
+- name: PGHOST
+  displayName: Database Host
+  description: Database Host (leave ${DATABASE_NAME}-service for default)
+  value: ${DATABASE_NAME}-service
+  required: true
+- name: PGPORT
+  displayName: Database Port
+  description: Database Port (leave 5444 for default)
+  value: '5444'
+  required: true
+- name: REPL_USER
+  displayName: Repl user
+  description: repl database user
+  value: 'repl'
+- name: REPL_PASSWORD  
+  displayName: Repl Password
+  description: Password for repl db user
+  required: true
+- name: YUM_URL
+  displayName: Yum Repository URL
+  description: Yum repository URL with username and password
+  value: 'http://<username>:<password>@yum.enterprisedb.com'
+- name: PERSISTENT_VOLUME
+  displayName: Persistent Volume
+  description: Persistent volume name
+  value: ''
+  required: true
+- name: PERSISTENT_VOLUME_CLAIM 
+  displayName: Persistent Volume Claim
+  description: Persistent volume claim name
+  value: ''
+  required: true
+- name: BART_BACKUP_SCHEDULE  
+  displayName: BART Backup Schedule
+  description: Standard cron schedule - min (0 - 59), hour (0 - 23), day of month (1 - 31), month (1 - 12), day of week (0 - 6) (0 to 6 are Sunday to Saturday, or use names; 7 is Sunday, the same as 0) 
+  value: '0:0:*:*:*'   
+  required: true
+- name: BART_NUM_BACKUPS_TO_KEEP  
+  displayName: BART Number of Backups to Keep
+  description: How many backups to keep, older backups will be removed as newer backups are added
+  value: '2'  
+  required: true

@@ -1,0 +1,170 @@
+apiVersion: v1
+kind: Template
+metadata:
+   name: ppas95-persistent
+   annotations:
+    description: "Standard EDB Postgres Advanced Server 9.5 Deployment Config"
+    tags: "database,ppas,postgres,postgresql"
+    iconClass: "icon-postgresql"
+labels:
+   template: ppas95-persistent
+objects:
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: ${DATABASE_NAME}-service
+  spec:
+    ports:
+    - name: db
+      port: 5444
+    - name: lb
+      port: 9999
+    selector:
+      db: ${DATABASE_NAME}
+    sessionAffinity: None
+    type: LoadBalancer
+- apiVersion: v1
+  kind: DeploymentConfig
+  metadata:
+    name: ${DATABASE_NAME} 
+  spec:
+    replicas: 4
+    selector:
+      db: ${DATABASE_NAME}
+    strategy:
+      resources: {}
+      rollingParams:
+        intervalSeconds: 1
+        maxSurge: 25%
+        maxUnavailable: 25%
+        timeoutSeconds: 600
+        updatePeriodSeconds: 1
+      type: Rolling
+    template:
+      metadata:
+        creationTimestamp: null
+        labels:
+          db: ${DATABASE_NAME}
+      spec:
+        containers:
+        - env:
+          - name: DATABASE_NAME 
+            value: ${DATABASE_NAME}
+          - name: DATABASE_USER 
+            value: ${DATABASE_USER}
+          - name: DATABASE_USER_PASSWORD
+            value: ${DATABASE_USER_PASSWORD} 
+          - name: ENTERPRISEDB_PASSWORD
+            value: ${ENTERPRISEDB_PASSWORD}
+          - name: REPL_USER
+            value: ${REPL_USER} 
+          - name: REPL_PASSWORD
+            value: ${REPL_PASSWORD}
+          - name: PGPORT
+            value: "5444"
+          - name: MASTER_HOST
+            value: ${DATABASE_NAME}-service
+          - name: MASTER_PORT
+            value: "9999"
+          - name: RESTORE_FILE
+            value: /edbvolume/backup/${DATABASE_NAME}/pgbackup/ppas-95/latest.tar
+          - name: LOCALEPARAMETER
+            value: ${LOCALEPARAMETER}
+          - name: CLEANUP_SCHEDULE
+            value: ${CLEANUP_SCHEDULE}
+          - name: YUM_URL
+            value: ${YUM_URL}
+          - name: EFM_EMAIL
+            value: ${EFM_EMAIL}
+          - name: EFM_PRODUCT_KEY
+            value: ${EFM_PRODUCT_KEY}
+          - name: NAMESERVER
+            value: ${NAMESERVER}
+          image: edb-as:9.5
+          imagePullPolicy: IfNotPresent
+          name: ${DATABASE_NAME}
+          ports:
+          - containerPort: 5444
+            protocol: TCP
+          - containerPort: 9999
+            protocol: TCP
+          readinessProbe:
+            exec:
+              command:
+              - /var/lib/ppas/testIsRunning.sh
+            initialDelaySeconds: 60
+            timeoutSeconds: 5	
+          resources: {}
+          terminationMessagePath: /dev/termination-log
+          volumeMounts:
+          - name: ${PERSISTENT_VOLUME}
+            mountPath: /edbvolume
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        securityContext: {}
+        terminationGracePeriodSeconds: 0
+        volumes:
+        - name: ${PERSISTENT_VOLUME}
+          persistentVolumeClaim:
+            claimName: ${PERSISTENT_VOLUME_CLAIM}
+    triggers:
+    - type: ConfigChange
+parameters:
+- name: DATABASE_NAME  
+  displayName: Database Name 
+  description: Name of Postgres database (leave edb for default) 
+  value: 'edb'   
+- name: DATABASE_USER  
+  displayName: Default database user (leave enterprisedb for default) 
+  description: Default database user
+  value: 'enterprisedb'
+- name: DATABASE_USER_PASSWORD  
+  displayName: Password for default database user 
+  description: Password for default db user (other than enterprisedb)
+  required: true
+- name: ENTERPRISEDB_PASSWORD
+  displayName: EnterpriseDB Password
+  description: Password for enterprisedb database user
+  required: true
+- name: REPL_USER  
+  displayName: Repl user
+  description: repl database user
+  value: 'repl'
+- name: REPL_PASSWORD  
+  displayName: Repl Password
+  description: Password for repl db user
+  required: true
+- name: LOCALEPARAMETER
+  displayName: Locale
+  description: Locale of database
+  value: 'en_US.UTF-8'
+- name: CLEANUP_SCHEDULE
+  displayName: Host Cleanup Schedule
+  description: Standard cron schedule - min (0 - 59), hour (0 - 23), day of month (1 - 31), month (1 - 12), day of week (0 - 6) (0 to 6 are Sunday to Saturday, or use names; 7 is Sunday, the same as 0). Leave it empty if you dont want to cleanup.
+  value: '0:0:*:*:*'
+- name: YUM_URL
+  displayName: Yum Repository URL
+  description: Yum repository URL with username and password
+  value: 'http://<username>:<password>@yum.enterprisedb.com'
+- name: EFM_EMAIL
+  displayName: Email
+  description: Email for EFM
+  value: 'none@none.com'
+- name: EFM_PRODUCT_KEY
+  displayName: EFM Product Key
+  description: EFM Product Key
+  value: ''
+- name: NAMESERVER
+  displayName: Name Server for Email
+  description: Name Server for Email
+  value: 'nameserver 8.8.8.8'
+- name: PERSISTENT_VOLUME
+  displayName: Persistent Volume
+  description: Persistent volume name
+  value: ''
+  required: true
+- name: PERSISTENT_VOLUME_CLAIM 
+  displayName: Persistent Volume Claim
+  description: Persistent volume claim name
+  value: ''
+  required: true
