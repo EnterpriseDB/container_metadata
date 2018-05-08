@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: glusterfs_endpoint_name
+subsets:
+- addresses:
+  - ip: glusterfs-node1-ipaddress # node1 IP
+  ports:
+  - port: 1
+- addresses:
+  - ip: glusterfs-node2-ipaddress # node2 IP
+  ports:
+  - port: 1
