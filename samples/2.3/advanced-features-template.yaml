@@ -1,0 +1,238 @@
+apiVersion: v1
+kind: Template
+metadata:
+   name: edbas10-persistent
+   annotations:
+    description: "Standard EDB Postgres Advanced Server 10 Deployment Config"
+    tags: "database,epas,postgres,postgresql"
+    iconClass: "icon-postgresql"
+objects:
+- apiVersion: v1 
+  kind: Service
+  metadata:
+    name: ${DATABASE_NAME}-service 
+    labels:
+      role: loadbalancer
+      cluster: ${DATABASE_NAME}
+  spec:
+    selector:                  
+      lb: ${DATABASE_NAME}-pgpool
+    ports:
+    - name: lb 
+      port: ${PGPORT}
+      nodePort: 30016
+      targetPort: 9999
+    sessionAffinity: None
+    type: LoadBalancer
+- apiVersion: v1 
+  kind: DeploymentConfig
+  metadata:
+    name: ${DATABASE_NAME}-pgpool
+  spec:
+    replicas: 2
+    selector:
+      lb: ${DATABASE_NAME}-pgpool
+    strategy:
+      resources: {}
+      rollingParams:
+        intervalSeconds: 1
+        maxSurge: 25%
+        maxUnavailable: 25%
+        timeoutSeconds: 600
+        updatePeriodSeconds: 1
+      type: Rolling
+    template:
+      metadata:
+        labels:
+          lb: ${DATABASE_NAME}-pgpool
+          role: queryrouter
+          cluster: ${DATABASE_NAME}
+      spec:
+        containers:
+        - name: edb-pgpool
+          env:
+          - name: DATABASE_NAME
+            value: ${DATABASE_NAME} 
+          - name: PGPORT
+            value: ${PGPORT} 
+          - name: REPL_USER
+            value: ${REPL_USER} 
+          - name: ENTERPRISEDB_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: ${DATABASE_NAME}-enterprisedb-passwd
+                key: password
+          - name: REPL_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: ${DATABASE_NAME}-repl-user-passwd
+                key: password
+          - name: ACCEPT_EULA
+            value: ${ACCEPT_EULA}
+          image: containers.enterprisedb.com/edb/edb-pgpool:v3.6
+          imagePullPolicy: Always
+          readinessProbe:
+            exec:
+              command:
+              - /var/lib/edb/testIsReady.sh
+            initialDelaySeconds: 60
+            timeoutSeconds: 5
+    triggers:
+    - type: ConfigChange
+- apiVersion: v1
+  kind: DeploymentConfig
+  metadata:
+    name: ${DATABASE_NAME}-as
+  spec:
+    replicas: 4
+    selector:
+      db: ${DATABASE_NAME}-as10 
+    strategy:
+      resources: {}
+      rollingParams:
+        intervalSeconds: 1
+        maxSurge: 25%
+        maxUnavailable: 25%
+        timeoutSeconds: 600
+        updatePeriodSeconds: 1
+      type: Rolling
+    template:
+      metadata:
+        creationTimestamp: null
+        labels:
+          db: ${DATABASE_NAME}-as10 
+          cluster: ${DATABASE_NAME}
+      spec:
+        containers:
+        - name: edb-as10 
+          env:
+          - name: DATABASE_NAME 
+            value: ${DATABASE_NAME} 
+          - name: DATABASE_USER 
+            valueFrom:
+              configMapKeyRef:
+                name: ${DATABASE_NAME}-config
+                key: database.user
+          - name: DATABASE_USER_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: ${DATABASE_NAME}-database-user-passwd
+                key: password
+          - name: ENTERPRISEDB_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: ${DATABASE_NAME}-enterprisedb-passwd 
+                key: password
+          - name: REPL_USER
+            valueFrom:
+              configMapKeyRef:
+                name: ${DATABASE_NAME}-config
+                key: repl.user
+          - name: REPL_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: ${DATABASE_NAME}-repl-user-passwd 
+                key: password
+          - name: PGPORT
+            value: ${PGPORT} 
+          - name: LOCALEPARAMETER
+            value: ${LOCALEPARAMETER}
+          - name: EFM_EMAIL
+            value: ${EFM_EMAIL}
+          - name: NAMESERVER
+            value: ${NAMESERVER}
+          - name: POD_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+          - name: POD_NODE
+            valueFrom:
+              fieldRef:
+                fieldPath: spec.nodeName 
+          - name: POD_IP
+            valueFrom:
+              fieldRef:
+                fieldPath: status.podIP 
+          - name: ACCEPT_EULA
+            value: ${ACCEPT_EULA}
+          image: containers.enterprisedb.com/edb/edb-as:v10
+          imagePullPolicy: Always 
+          readinessProbe:
+            exec:
+              command:
+              - /var/lib/edb/testIsReady.sh
+            initialDelaySeconds: 60
+            timeoutSeconds: 5 
+          livenessProbe:
+            exec:
+              command:
+              - /var/lib/edb/testIsHealthy.sh
+            initialDelaySeconds: 600 
+            timeoutSeconds: 60 
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                - /var/lib/edb/shutdown.sh
+          ports:
+          - containerPort: ${PGPORT} 
+          volumeMounts:
+          - name: ${PERSISTENT_VOLUME}
+            mountPath: /edbvolume
+          - name: ${BACKUP_VOLUME}
+            mountPath: /edbbackup
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        volumes:
+        - name: ${PERSISTENT_VOLUME}
+          persistentVolumeClaim:
+            claimName: ${PERSISTENT_VOLUME_CLAIM}
+        - name: ${BACKUP_VOLUME}
+          persistentVolumeClaim:
+            claimName: ${BACKUP_VOLUME_CLAIM}
+    triggers:
+    - type: ConfigChange
+parameters:
+- name: DATABASE_NAME
+  displayName: Database Name
+  description: Name of Postgres database (leave edb for default)
+  value: 'edb'
+- name: DATABASE_USER
+  displayName: Default database user (leave enterprisedb for default)
+  description: Default database user
+  value: 'enterprisedb'
+- name: REPL_USER
+  displayName: Repl user
+  description: repl database user
+  value: 'repl'
+- name: PGPORT
+  displayName: Database Port
+  description: Database Port (leave 5444 for default)
+  value: '5444'
+- name: LOCALEPARAMETER
+  displayName: Locale
+  description: Locale of database
+  value: 'en_US.UTF-8'
+- name: EFM_EMAIL
+  displayName: Email
+  description: Email for EFM
+  value: 'none@none.com'
+- name: NAMESERVER
+  displayName: Name Server for Email
+  description: Name Server for Email
+  value: '8.8.8.8'
+- name: PERSISTENT_VOLUME
+  displayName: Persistent Volume
+  description: Persistent volume name
+  value: 'edb-data-pv'
+  required: true
+- name: PERSISTENT_VOLUME_CLAIM 
+  displayName: Persistent Volume Claim
+  description: Persistent volume claim name
+  value: 'edb-data-pvc'
+  required: true
+- name: ACCEPT_EULA
+  displayName: Accept end-user license agreement (leave 'Yes' for default)
+  description: Indicates whether user accepts the end-user license agreement
+  value: 'Yes'
+  required: true

@@ -1,0 +1,188 @@
+apiVersion: v1
+kind: Template
+metadata:
+   name: edb-pemserver
+   annotations:
+    description: "Standard EDB Postgres Enterprise Manager Server 7.3 Deployment Config"
+    tags: "pemserver"
+    iconClass: "icon-postgresql"
+objects:
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: ${DATABASE_NAME}-webservice 
+    labels:
+      name: ${DATABASE_NAME}-webservice
+  spec:
+    selector:
+      role: pemserver 
+    ports:
+    - name: https
+      port: 30443
+      nodePort: 30443
+      protocol: TCP
+      targetPort: 8443
+    - name: http
+      port: 30080
+      nodePort: 30080
+      protocol: TCP
+      targetPort: 8080
+    type: NodePort
+- apiVersion: v1
+  kind: DeploymentConfig
+  metadata:
+    name: edb-pemserver
+  spec:
+    replicas: 1
+    selector:
+      app: pemserver 
+    strategy:
+      resources: {}
+      rollingParams:
+        intervalSeconds: 1
+        maxSurge: 25%
+        maxUnavailable: 25%
+        timeoutSeconds: 600
+        updatePeriodSeconds: 1
+      type: Rolling
+    template:
+      metadata:
+        creationTimestamp: null
+        labels:
+          app: pemserver 
+          cluster: ${DATABASE_NAME} 
+      spec:
+        containers:
+        - name: pem-db
+          env:
+          - name: DATABASE_NAME
+            value: ${DATABASE_NAME} 
+          - name: DATABASE_USER
+            value: ${DATABASE_USER}
+          - name: DATABASE_USER_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: pem-database-user-passwd
+                key: password
+          - name: ENTERPRISEDB_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: pem-enterprisedb-passwd
+                key: password
+          - name: POD_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+          - name: POD_NODE
+            valueFrom:
+              fieldRef:
+                fieldPath: spec.nodeName
+          - name: POD_IP
+            valueFrom:
+              fieldRef:
+                fieldPath: status.podIP
+          - name: PGPORT
+            value: ${PGPORT}
+          - name: RESTORE_FILE
+            value: ${RESTORE_FILE}
+          - name: ENABLE_HA_MODE
+            value: "No"
+          - name: ACCEPT_EULA
+            value: ${ACCEPT_EULA}
+          image: containers.enterprisedb.com/edb/edb-as:v10
+          imagePullPolicy: Always 
+          volumeMounts:
+          - name: ${PERSISTENT_VOLUME}
+            mountPath: /edbvolume
+        - name: pem-webclient 
+          image: containers.enterprisedb.com/edb/edb-pemserver:v7.3
+          imagePullPolicy: Always 
+          env:
+          - name: DATABASE_NAME 
+            value: ${DATABASE_NAME} 
+          - name: DATABASE_USER 
+            value: ${DATABASE_USER} 
+          - name: DATABASE_USER_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: ${DATABASE_NAME}-database-user-passwd
+                key: password
+          - name: ENTERPRISEDB_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: ${DATABASE_NAME}-enterprisedb-passwd 
+                key: password
+          - name: POD_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+          - name: POD_NODE
+            valueFrom:
+              fieldRef:
+                fieldPath: spec.nodeName 
+          - name: POD_IP
+            valueFrom:
+              fieldRef:
+                fieldPath: status.podIP 
+          - name: PGPORT
+            value: ${PGPORT}
+          - name: CIDR_ADDR
+            value: ${CIDR_ADDR}
+          - name: ACCEPT_EULA
+            value: ${ACCEPT_EULA}
+          ports:
+          - containerPort: ${PGPORT} 
+          volumeMounts:
+          - name: ${PERSISTENT_VOLUME}
+            mountPath: /edbvolume
+          - name: httpd-shm
+            mountPath: /run/httpd
+        volumes:
+        - name: ${PERSISTENT_VOLUME}
+          persistentVolumeClaim:
+            claimName: ${PERSISTENT_VOLUME_CLAIM}
+        - name: httpd-shm 
+          emptyDir:
+            medium: Memory 
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+    triggers:
+    - type: ConfigChange
+parameters:
+- name: DATABASE_NAME
+  displayName: Database Name
+  description: Name of Postgres database (leave edb for default)
+  value: 'pem'
+  required: true
+- name: DATABASE_USER
+  displayName: Default database user (leave enterprisedb for default)
+  description: Default database user
+  value: 'enterprisedb'
+- name: PGPORT
+  displayName: Database Port
+  description: Database Port (leave 5444 for default)
+  value: '5444'
+  required: true
+- name: PERSISTENT_VOLUME
+  displayName: Persistent Volume
+  description: Persistent volume name
+  value: 'edb-data-pv'
+  required: true
+- name: PERSISTENT_VOLUME_CLAIM 
+  displayName: Persistent Volume Claim
+  description: Persistent volume claim name
+  value: 'edb-data-pvc'
+  required: true
+- name: RESTORE_FILE
+  displayName: Restore File
+  description: Restore file location
+  value: ''
+- name: CIDR_ADDR 
+  displayName: CIDR address block for PEM 
+  description: CIDR address block for PEM (leave '0.0.0.0/0' for default) 
+  value: '0.0.0.0/0' 
+- name: ACCEPT_EULA
+  displayName: Accept end-user license agreement (leave 'Yes' for default)
+  description: Indicates whether user accepts the end-user license agreement
+  value: 'Yes'
+  required: true

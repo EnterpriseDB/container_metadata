@@ -1,0 +1,145 @@
+apiVersion: v1
+kind: Template
+metadata:
+   name: edb-bart
+   annotations:
+    description: "Standard EDB Backup And Recovery Tool Deployment Config"
+    tags: "database,edbas,postgres,postgresql"
+    iconClass: "icon-postgresql"
+labels:
+   template: edb-bart
+objects:
+- apiVersion: v1
+  kind: DeploymentConfig
+  metadata:
+    name: ${DATABASE_NAME}-bart
+  spec:
+    replicas: 1
+    selector:
+      name: ${DATABASE_NAME}-bart
+    strategy:
+      resources: {}
+      rollingParams:
+        intervalSeconds: 1
+        maxSurge: 25%
+        maxUnavailable: 25%
+        timeoutSeconds: 600
+        updatePeriodSeconds: 1
+      type: Rolling
+    template:
+      metadata:
+        labels:
+          name: ${DATABASE_NAME}-bart
+          role: backuptool 
+          cluster: ${DATABASE_NAME} 
+      spec:
+        containers:
+        - name: edb-bart
+          env:
+          - name: BART_HOST_ADDRESS 
+            value: ${BART_HOST_ADDRESS}
+          - name: DATABASE_NAME 
+            value: ${DATABASE_NAME}
+          - name: PGHOST
+            value: "${DATABASE_NAME}-service"
+          - name: PGPORT
+            value: ${PGPORT}
+          - name: REPL_USER
+            valueFrom:
+              configMapKeyRef:
+                name: ${DATABASE_NAME}-config
+                key: repl.user
+          - name: REPL_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: ${DATABASE_NAME}-repl-user-passwd
+                key: password
+          - name: BART_AUTOMATE_BACKUP 
+            value: ${BART_AUTOMATE_BACKUP}
+          - name: BART_BACKUP_SCHEDULE 
+            value: "${BART_BACKUP_SCHEDULE}"
+          - name: BART_NUM_BACKUPS_TO_KEEP 
+            value: "${BART_NUM_BACKUPS_TO_KEEP}"
+          - name: BART_COMPRESS_BACKUP 
+            value: ${BART_COMPRESS_BACKUP}
+          - name: POD_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+          - name: ACCEPT_EULA
+            value: ${ACCEPT_EULA}
+          volumeMounts:
+          - name: ${BACKUP_VOLUME}
+            mountPath: /edbbackup
+          - name: edb-bartconf
+            mountPath: /bartconf
+          image: containers.enterprisedb.com/edb/edb-bart:v2.1
+          imagePullPolicy: Always 
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                - /var/lib/edb/shutdown.sh
+        volumes:
+        - name: ${BACKUP_VOLUME}
+          persistentVolumeClaim:
+            claimName: ${BACKUP_VOLUME_CLAIM}
+        - name: edb-bartconf
+          configMap:
+            name: ${DATABASE_NAME}-bartconf-vol
+    triggers:
+    - type: ConfigChange
+parameters:
+- name: BART_HOST_ADDRESS 
+  displayName: BART Host Address 
+  description: BART host address (leave localhost for default)
+  value: 'localhost'
+  required: true
+- name: DATABASE_NAME  
+  displayName: Database Name 
+  description: Name of Postgres database (leave edb for default) 
+  value: 'edb'
+  required: true
+- name: PGHOST
+  displayName: Database Host
+  description: Database Host (leave ${DATABASE_NAME}-service for default)
+  value: ${DATABASE_NAME}-service
+  required: true
+- name: PGPORT
+  displayName: Database Port
+  description: Database Port (leave 5444 for default)
+  value: '5444'
+  required: true
+- name: BACKUP_VOLUME
+  displayName: Backup Volume
+  description: Backup volume name
+  value: 'edb-backup-pv'
+- name: BACKUP_VOLUME_CLAIM
+  displayName: Backup Volume Claim
+  description: Backup volume claim name
+  value: 'edb-backup-pvc'
+- name: BART_AUTOMATE_BACKUP
+  displayName: Automate backup operation (leave 'Yes' for default)
+  description: Indicates whether backups should be done automatically 
+  value: 'Yes'
+  required: true
+- name: BART_BACKUP_SCHEDULE  
+  displayName: BART Backup Schedule
+  description: Standard cron schedule - min (0 - 59), hour (0 - 23), day of month (1 - 31), month (1 - 12), day of week (0 - 6) (0 to 6 are Sunday to Saturday, or use names; 7 is Sunday, the same as 0) 
+  value: '0:0:*:*:*'   
+  required: true
+- name: BART_NUM_BACKUPS_TO_KEEP  
+  displayName: BART Number of Backups to Keep
+  description: How many backups to keep, older backups will be removed as newer backups are added
+  value: '2'  
+  required: true
+- name: BART_COMPRESS_BACKUP
+  displayName: Compress backup files (leave 'Yes' for default) 
+  description: Indicates whether backup files should be compressed  
+  value: 'Yes'
+  required: true
+- name: ACCEPT_EULA
+  displayName: Accept end-user license agreement (leave 'Yes' for default)
+  description: Indicates whether user accepts the end-user license agreement
+  value: 'Yes'
+  required: true
