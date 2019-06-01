@@ -1,0 +1,7 @@
+apiVersion: enterprisedb.com/v1alpha1
+kind: PgCluster
+metadata:
+  name: example-pgcluster
+spec:
+  # Add fields here
+  size: 3
